@@ -3,6 +3,7 @@ package com.bgsoftware.superiorskyblock.player.respawn;
 import com.bgsoftware.superiorskyblock.SuperiorSkyblockPlugin;
 import com.bgsoftware.superiorskyblock.api.player.respawn.RespawnAction;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerRespawnEvent;
 
@@ -37,7 +38,9 @@ public class RespawnActions {
         public void perform(PlayerRespawnEvent event) {
             SuperiorPlayer superiorPlayer = plugin.getPlayers().getSuperiorPlayer(event.getPlayer());
             assert superiorPlayer.getIsland() != null;
-            superiorPlayer.teleport(superiorPlayer.getIsland());
+            // superiorPlayer.teleport(superiorPlayer.getIsland());
+            Location location = superiorPlayer.getIsland().getIslandHome(plugin.getSettings().getWorlds().getDefaultWorldDimension());
+            event.setRespawnLocation(location);
         }
 
     });
