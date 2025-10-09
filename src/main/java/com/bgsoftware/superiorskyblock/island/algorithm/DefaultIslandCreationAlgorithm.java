@@ -55,13 +55,21 @@ public class DefaultIslandCreationAlgorithm implements IslandCreationAlgorithm {
     }
 
     @Override
-    public CompletableFuture<IslandCreationResult> createIsland(Island.Builder builderParam, BlockPosition lastIsland) {
-        Preconditions.checkNotNull(builderParam, "builder parameter cannot be null.");
-        Preconditions.checkArgument(builderParam instanceof IslandBuilderImpl, "Cannot create an island from custom builder.");
+    public CompletableFuture<IslandCreationResult> createIsland(Island.Builder builder, BlockPosition lastIsland) {
+        Preconditions.checkNotNull(builder, "builder parameter cannot be null.");
+        Preconditions.checkArgument(builder instanceof IslandBuilderImpl, "Cannot create an island from custom builder.");
         Preconditions.checkNotNull(lastIsland, "lastIsland parameter cannot be null.");
 
-        IslandBuilderImpl builder = (IslandBuilderImpl) builderParam;
+        try {
+            return createIslandInternal((IslandBuilderImpl) builder, lastIsland);
+        } catch (Throwable error) {
+            CompletableFuture<IslandCreationResult> result = new CompletableFuture<>();
+            result.completeExceptionally(error);
+            return result;
+        }
+    }
 
+    private CompletableFuture<IslandCreationResult> createIslandInternal(IslandBuilderImpl builder, BlockPosition lastIsland) {
         Schematic schematic = builder.islandType == null ? null : plugin.getSchematics().getSchematic(builder.islandType);
 
         Preconditions.checkArgument(builder.owner != null, "Cannot create an island from builder with no valid owner.");
@@ -77,9 +85,8 @@ public class DefaultIslandCreationAlgorithm implements IslandCreationAlgorithm {
 
         long profiler = Profiler.start(ProfileType.CREATE_ISLAND, schematic.getName());
 
-
         Location islandLocation = plugin.getProviders().getWorldsProvider().getNextLocation(
-                lastIsland.parse().clone(),
+                lastIsland,
                 plugin.getSettings().getIslandHeight(),
                 plugin.getSettings().getMaxIslandSize(),
                 builder.owner.getUniqueId(),

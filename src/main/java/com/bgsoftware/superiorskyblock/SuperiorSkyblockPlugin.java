@@ -327,7 +327,7 @@ public class SuperiorSkyblockPlugin extends JavaPlugin implements SuperiorSkyblo
     public void onDisable() {
         try {
             if (loadingStage.isAtLeast(PluginLoadingStage.START_ENABLE))
-                BukkitExecutor.prepareDisable();
+                BukkitExecutor.prepareShutdown();
 
             if (loadingStage.isAtLeast(PluginLoadingStage.CHUNKS_PROVIDER_INITIALIZED))
                 ChunksProvider.stop();
@@ -341,7 +341,6 @@ public class SuperiorSkyblockPlugin extends JavaPlugin implements SuperiorSkyblo
 
                 playersHandler.savePlayers();
                 gridHandler.saveIslands();
-                stackedBlocksHandler.saveStackedBlocks();
             }
 
             if (loadingStage.isAtLeast(PluginLoadingStage.MODULES_INITIALIZED)) {
@@ -377,7 +376,7 @@ public class SuperiorSkyblockPlugin extends JavaPlugin implements SuperiorSkyblo
 
             if (loadingStage.isAtLeast(PluginLoadingStage.START_ENABLE)) {
                 Log.info("Shutting down executor");
-                BukkitExecutor.close();
+                BukkitExecutor.close(plugin);
             }
 
             if (loadingStage.isAtLeast(PluginLoadingStage.MANAGERS_INITIALIZED)) {
