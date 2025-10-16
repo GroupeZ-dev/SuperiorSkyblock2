@@ -1,5 +1,6 @@
 package com.bgsoftware.superiorskyblock.nms.v1_21_9;
 
+import com.bgsoftware.common.reflection.ReflectMethod;
 import com.bgsoftware.superiorskyblock.SuperiorSkyblockPlugin;
 import com.bgsoftware.superiorskyblock.api.key.Key;
 import com.bgsoftware.superiorskyblock.api.key.KeyMap;
@@ -16,11 +17,10 @@ import com.bgsoftware.superiorskyblock.world.BukkitEntities;
 import com.bgsoftware.superiorskyblock.world.chunk.ChunkLoadReason;
 import com.bgsoftware.superiorskyblock.world.generator.IslandsGenerator;
 import com.mojang.logging.LogUtils;
+import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
@@ -64,8 +64,10 @@ import static com.bgsoftware.superiorskyblock.nms.v1_21_9.utils.NMSUtilsVersione
 
 public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.AbstractNMSChunks {
 
-    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final ReflectMethod<Codec<PalettedContainer<Holder<Biome>>>> CONTAINER_FACTORY_BIOME_RW_CODEC =
+            new ReflectMethod<>(PalettedContainerFactory.class, "biomeContainerCodecRW");
 
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public NMSChunksImpl(SuperiorSkyblockPlugin plugin) {
         super(plugin);
@@ -93,7 +95,7 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
 
                 ClientboundForgetLevelChunkPacket forgetLevelChunkPacket = new ClientboundForgetLevelChunkPacket(chunkPos);
                 ClientboundLevelChunkWithLightPacket mapChunkPacket = new ClientboundLevelChunkWithLightPacket(
-                        levelChunk, levelChunk.level.getLightEngine(), null, null, true);
+                        levelChunk, levelChunk.level.getLightEngine(), null, null);
 
                 playersToUpdate.forEach(player -> {
                     ServerPlayer serverPlayer = ((CraftPlayer) player).getHandle();
@@ -109,7 +111,7 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
                 Holder<Biome> biome = CraftBiome.bukkitToMinecraftHolder(bukkitBiome);
 
                 PalettedContainer<Holder<Biome>> biomesContainer = NMSUtilsVersioned.createBiomesContainer(biome);
-                DataResult<Tag> dataResult = DEFAULT_PALETTED_CONTAINER_FACTORY.biomeContainerRWCodec()
+                DataResult<Tag> dataResult = getBiomeContainerRWCodec()
                         .encodeStart(NbtOps.INSTANCE, biomesContainer);
                 Tag biomesCompound = dataResult.getOrThrow();
 
@@ -148,7 +150,7 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
 
                 ListTag tileEntities = new ListTag();
 
-                chunkCompound.put("entities", new ListTag());
+                chunkCompound.put("Entities", new ListTag());
                 chunkCompound.put("block_entities", tileEntities);
 
                 if (serverLevel.generator instanceof IslandsGenerator) {
@@ -221,9 +223,9 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
     }
 
     @Override
-    protected NMSUtils.ChunkCallback getCalculateChunkCallback(CompletableFuture<List<CalculatedChunk>> completableFuture,
-                                                               Synchronized<Chunk2ObjectMap<CalculatedChunk>> unloadedChunksCache,
-                                                               List<CalculatedChunk> allCalculatedChunks) {
+    protected NMSUtils.ChunkCallback getCalculateChunkCallback(CompletableFuture<List<CalculatedChunk.Blocks>> completableFuture,
+                                                               Synchronized<Chunk2ObjectMap<CalculatedChunk.Blocks>> unloadedChunksCache,
+                                                               List<CalculatedChunk.Blocks> allCalculatedChunks) {
         return new NMSUtils.ChunkCallback(ChunkLoadReason.BLOCKS_RECALCULATE, true) {
             @Override
             public void onLoadedChunk(LevelChunk levelChunk) {
@@ -264,8 +266,8 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
                         PalettedContainer<Holder<Biome>> biomesPalettedContainer;
                         Optional<CompoundTag> biomesCompound = sectionCompound.getCompound("biomes");
                         if (biomesCompound.isPresent()) {
-                            DataResult<PalettedContainer<Holder<Biome>>> dataResult = DEFAULT_PALETTED_CONTAINER_FACTORY
-                                    .biomeContainerRWCodec().parse(NbtOps.INSTANCE, biomesCompound.get())
+                            DataResult<PalettedContainer<Holder<Biome>>> dataResult = getBiomeContainerRWCodec()
+                                    .parse(NbtOps.INSTANCE, biomesCompound.get())
                                     .promotePartial((sx) -> {
                                     });
                             biomesPalettedContainer = dataResult.getOrThrow();
@@ -278,7 +280,7 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
 
                 }
 
-                CalculatedChunk calculatedChunk = calculateChunk(chunkPosition, serverLevel, chunkSections);
+                CalculatedChunk.Blocks calculatedChunk = calculateChunk(chunkPosition, serverLevel, chunkSections);
                 allCalculatedChunks.add(calculatedChunk);
                 unloadedChunksCache.write(m -> m.put(chunkPosition, calculatedChunk));
 
@@ -293,16 +295,15 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
     }
 
     @Override
-    protected NMSUtils.ChunkCallback getEntitiesChunkCallback(KeyMap<Counter> chunkEntities,
+    protected NMSUtils.ChunkCallback getEntitiesChunkCallback(List<CalculatedChunk.Entities> allCalculatedChunks,
                                                               List<NMSUtils.UnloadedChunkCompound> unloadedChunkCompounds,
-                                                              CompletableFuture<KeyMap<Counter>> completableFuture) {
+                                                              CompletableFuture<List<CalculatedChunk.Entities>> completableFuture) {
         return new NMSUtils.ChunkCallback(ChunkLoadReason.ENTITIES_RECALCULATE, true) {
             @Override
             public void onLoadedChunk(LevelChunk levelChunk) {
-                for (org.bukkit.entity.Entity bukkitEntity : new CraftChunk(levelChunk).getEntities()) {
-                    if (!BukkitEntities.canBypassEntityLimit(bukkitEntity))
-                        chunkEntities.computeIfAbsent(Keys.of(bukkitEntity), i -> new Counter(0)).inc(1);
-                }
+                ChunkPos chunkPos = levelChunk.getPos();
+                ChunkPosition chunkPosition = ChunkPosition.of(levelChunk.level.getWorld(), chunkPos.x, chunkPos.z, false);
+                allCalculatedChunks.add(calculatedChunk(chunkPosition, levelChunk));
 
                 latchCountDown();
             }
@@ -318,38 +319,24 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
             public void onFinish() {
                 BukkitExecutor.ensureMain(() -> {
                     for (NMSUtils.UnloadedChunkCompound unloadedChunkCompound : unloadedChunkCompounds) {
-                        ServerLevel serverLevel = unloadedChunkCompound.serverLevel();
-                        CompoundTag chunkCompound = unloadedChunkCompound.chunkCompound();
-
-                        for (Tag entityTag : chunkCompound.getListOrEmpty("entities")) {
-                            Entity fakeEntity;
-                            EntityType<?> entityType;
-                            try (ProblemReporter.ScopedCollector scopedCollector =
-                                         new ProblemReporter.ScopedCollector(entityTag::toString, LOGGER)) {
-                                ValueInput valueInput = TagValueInput.create(scopedCollector, serverLevel.registryAccess(), (CompoundTag) entityTag);
-
-                                entityType = EntityType.by(valueInput).orElse(null);
-                                if (entityType == null)
-                                    continue;
-
-                                fakeEntity = EntityType.create(valueInput, serverLevel, EntitySpawnReason.NATURAL).orElse(null);
-                            }
-
-                            if (fakeEntity != null) {
-                                fakeEntity.valid = false;
-                                if (BukkitEntities.canBypassEntityLimit(fakeEntity.getBukkitEntity()))
-                                    continue;
-                            }
-
-                            Key entityKey = Keys.of(CraftEntityType.minecraftToBukkit(entityType));
-                            chunkEntities.computeIfAbsent(entityKey, k -> new Counter(0)).inc(1);
-                        }
+                        ListTag entitiesTag = unloadedChunkCompound.chunkCompound().getListOrEmpty("Entities");
+                        allCalculatedChunks.add(calculatedChunk(unloadedChunkCompound.chunkPosition(),
+                                unloadedChunkCompound.serverLevel(), entitiesTag));
                     }
 
-                    completableFuture.complete(chunkEntities);
+                    completableFuture.complete(allCalculatedChunks);
                 });
             }
         };
+    }
+
+    @Override
+    protected Optional<Entity> createEntityFromTag(CompoundTag compoundTag, ServerLevel serverLevel) {
+        try (ProblemReporter.ScopedCollector scopedCollector =
+                     new ProblemReporter.ScopedCollector(compoundTag::toString, LOGGER)) {
+            ValueInput valueInput = TagValueInput.create(scopedCollector, serverLevel.registryAccess(), compoundTag);
+            return EntityType.create(valueInput, serverLevel, EntitySpawnReason.NATURAL);
+        }
     }
 
     private static void removeBlocks(ChunkAccess chunk) {
@@ -360,6 +347,14 @@ public class NMSChunksImpl extends com.bgsoftware.superiorskyblock.nms.v1_21_9.A
             return;
 
         NMSUtilsVersioned.buildSurfaceForChunk(serverLevel, bukkitGenerator, chunk);
+    }
+
+    private static Codec<PalettedContainer<Holder<Biome>>> getBiomeContainerRWCodec() {
+        if (CONTAINER_FACTORY_BIOME_RW_CODEC.isValid()) {
+            return CONTAINER_FACTORY_BIOME_RW_CODEC.invoke(DEFAULT_PALETTED_CONTAINER_FACTORY);
+        } else {
+            return DEFAULT_PALETTED_CONTAINER_FACTORY.biomeContainerRWCodec();
+        }
     }
 
 }
